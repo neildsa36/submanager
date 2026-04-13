@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Dashboard</title>
+
+<style>
+body{
+    margin:0;
+    font-family: Arial;
+    background:#f1f5f9;
+    color:#1e293b;
+}
+
+.header{
+    background:white;
+    padding:15px 25px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    box-shadow:0 2px 5px rgba(0,0,0,0.1);
+}
+
+.logo{
+    display:flex;
+    align-items:center;
+    gap:10px;
+}
+
+.container{
+    padding:20px;
+}
+
+.cards{
+    display:flex;
+    gap:20px;
+}
+
+.card{
+    flex:1;
+    background:linear-gradient(135deg,#3b82f6,#9333ea);
+    padding:20px;
+    border-radius:12px;
+    color:white;
+}
+
+input,select{
+    padding:10px;
+    margin:5px;
+    border-radius:8px;
+    border:1px solid #ccc;
+}
+
+button{
+    padding:10px;
+    margin:5px;
+    border-radius:8px;
+    border:none;
+    background:#3b82f6;
+    color:white;
+    cursor:pointer;
+}
+
+button:hover{
+    opacity:0.9;
+}
+
+.filters button{
+    background:#e2e8f0;
+    color:black;
+}
+
+.filters button.active{
+    background:#3b82f6;
+    color:white;
+}
+
+.item{
+    background:white;
+    padding:15px;
+    margin:10px 0;
+    border-radius:10px;
+    transition:0.3s;
+    animation:fadeIn 0.3s ease;
+    box-shadow:0 2px 5px rgba(0,0,0,0.1);
+}
+
+.item:hover{
+    transform:scale(1.02);
+}
+
+.active{
+    border-left:5px solid green;
+}
+
+.expired{
+    border-left:5px solid red;
+}
+
+@keyframes fadeIn{
+from{opacity:0; transform:translateY(10px);}
+to{opacity:1; transform:translateY(0);}
+}
+</style>
+
+</head>
+
+<body>
+
+<div class="header">
+<div class="logo">
+<img src="logo.png" width="40">
+<h2>Subscription Manager</h2>
+</div>
+
+<div>
+<button onclick="downloadReport()">📄 Report</button>
+<button onclick="logout()">Logout</button>
+</div>
+</div>
+
+<div class="container">
+
+<div id="alertBox" style="display:none;background:#ef4444;color:white;padding:10px;border-radius:8px;margin-bottom:10px;"></div>
+
+<div class="cards">
+<div class="card">
+<h3>Monthly</h3>
+<h2 id="monthly">₹0</h2>
+</div>
+
+<div class="card">
+<h3>Yearly</h3>
+<h2 id="yearly">₹0</h2>
+</div>
+</div>
+
+<h3>Add Subscription</h3>
+
+<input id="service" placeholder="Service">
+<input id="amount" placeholder="Amount">
+<input type="date" id="date">
+
+<select id="cycle">
+<option value="daily">Daily</option>
+<option value="weekly">Weekly</option>
+<option value="monthly">Monthly</option>
+<option value="yearly">Yearly</option>
+</select>
+
+<select id="reminderDays">
+<option value="1" selected>1 Day Before</option>
+<option value="2">2 Days Before</option>
+<option value="3">3 Days Before</option>
+</select>
+
+<select id="reminderType">
+<option value="minute">Every Minute</option>
+<option value="hour" selected>Every Hour</option>
+<option value="2hour">Every 2 Hours</option>
+</select>
+
+<button id="addBtn" onclick="addSub()">Add</button>
+
+<br>
+
+<input id="search" placeholder="Search..." onkeyup="load()">
+
+<div class="filters">
+<button onclick="setFilter('all')" class="active">All</button>
+<button onclick="setFilter('active')">Active</button>
+<button onclick="setFilter('expired')">Expired</button>
+</div>
+
+<div id="list"></div>
+
+</div>
+
+<script>
+
+const email = localStorage.getItem("email");
+let filter = "all";
+
+function setFilter(f){
+    filter = f;
+    document.querySelectorAll(".filters button").forEach(b=>b.classList.remove("active"));
+    event.target.classList.add("active");
+    load();
+}
+
+// LOAD
+function load(){
+fetch(`/subs/${email}`)
+.then(r=>r.json())
+.then(data=>{
+list.innerHTML="";
+let keyword = document.getElementById("search").value.toLowerCase();
+
+data.forEach(s=>{
+
+if(!s.name.toLowerCase().includes(keyword)) return;
+
+// FIXED DATE
+let today = new Date();
+let renewal = new Date(s.renewal_date.split("T")[0]);
+
+today.setHours(0,0,0,0);
+renewal.setHours(0,0,0,0);
+
+let isExpired = renewal < today;
+let diffDays = Math.ceil((renewal - today) / (1000 * 60 * 60 * 24));
+
+let status = isExpired ? "Expired ❌" : "Active ✅";
+let cls = isExpired ? "expired" : "active";
+
+let countdown = isExpired 
+    ? "Expired"
+    : (diffDays === 0 ? "Due Today 🔥" : diffDays + " day(s) left");
+
+if(filter=="active" && isExpired) return;
+if(filter=="expired" && !isExpired) return;
+
+list.innerHTML+=`
+<div class="item ${cls}">
+<b>${s.name}</b> ₹${s.amount} 
+<span style="color:${isExpired ? 'red':'green'}">
+${status}
+</span>
+
+<br>
+<small>⏳ ${countdown}</small>
+
+<br>
+<small>
+Reminder: ${s.reminder_days || 1} day(s), ${s.reminder_type || 'hour'}
+</small>
+
+<br>
+
+<button onclick="edit(${s.id}, '${s.name}', ${s.amount}, '${s.billing_cycle}', '${s.renewal_date}')">Edit</button>
+
+<button onclick="del(${s.id})">Delete</button>
+</div>`;
+});
+});
+
+fetch(`/summary/${email}`)
+.then(r=>r.json())
+.then(d=>{
+monthly.innerText="₹"+d.monthly;
+yearly.innerText="₹"+d.yearly;
+});
+}
+
+// REPORT
+function downloadReport(){
+    window.open(`/report/${email}`);
+}
+
+// ADD
+function addSub(){
+fetch("/addSub",{
+method:"POST",
+headers:{"Content-Type":"application/json"},
+body:JSON.stringify({
+email:email,
+name: service.value,
+amount:amount.value,
+billing_cycle:cycle.value,
+renewal_date:date.value,
+reminder_days: reminderDays.value,
+reminder_type: reminderType.value
+})
+}).then(load);
+}
+
+// DELETE
+function del(id){
+fetch("/delete",{
+method:"POST",
+headers:{"Content-Type":"application/json"},
+body:JSON.stringify({id})
+}).then(load);
+}
+
+// EDIT
+function edit(id,n,a,c,d){
+service.value=n;
+amount.value=a;
+cycle.value=c;
+date.value=d;
+
+let btn=document.getElementById("addBtn");
+btn.innerText="Update";
+
+btn.onclick=function(){
+fetch("/update",{
+method:"POST",
+headers:{"Content-Type":"application/json"},
+body:JSON.stringify({
+id:id,
+name:service.value,
+amount:amount.value,
+billing_cycle:cycle.value,
+renewal_date:date.value,
+reminder_days: reminderDays.value,
+reminder_type: reminderType.value
+})
+}).then(()=>{
+btn.innerText="Add";
+btn.onclick=addSub;
+load();
+});
+}
+}
+
+// ALERT
+function loadAlerts(){
+fetch(`/due/${email}`)
+.then(r=>r.json())
+.then(data=>{
+    if(data.length > 0){
+        let text = "⚠ Due: ";
+        data.forEach(s=> text += s.name + " ");
+        let box = document.getElementById("alertBox");
+        box.style.display="block";
+        box.innerText=text;
+    }
+});
+}
+
+// LOGOUT
+function logout(){
+localStorage.removeItem("email");
+window.location="login.html";
+}
+
+load();
+loadAlerts();
+
+</script>
+
+</body>
+</html>
